@@ -2,6 +2,7 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <string.h>
+#include "../lib/aes.h"
 
 // This is a source code that has been slightly modified
 // ORIGINAL SOURCE CODE: https://wiki.openssl.org/index.php/EVP_Symmetric_Encryption_and_Decryption

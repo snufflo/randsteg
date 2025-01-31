@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define TABLE_SIZE 1000
+#define TABLE_SIZE 2000
 
 typedef struct Node {
 	int width;
@@ -34,7 +34,7 @@ int hash(int width, int height, int depth) {
 	return hash % TABLE_SIZE;
 }
 
-int search(HashTable table, int width, int height, int depth) {
+int search(HashTable *table, int width, int height, int depth) {
 	int index = hash(width, height, depth);
 	Node *node = table->arr[index];
 
@@ -49,7 +49,7 @@ int search(HashTable table, int width, int height, int depth) {
 	return 0;
 }
 
-void insert(HashTable table, int width, int height, int depth) {
+void insert(HashTable *table, int width, int height, int depth) {
 	int index = hash(width, height, depth);
 	Node *node = malloc(sizeof(Node));
 	node->width = width;

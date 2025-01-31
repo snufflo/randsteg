@@ -1,7 +1,6 @@
 !!: This program is not fitted for professional use in security!
 
 # Warning
-- This project is not completed yet and is only to be viewed as a general idea of the actual program itself.
 - The program itself is not compilable yet, as it is still in development.
 - Although the idea of storing your password into a png is pretty neat, it is not recommended as an actual security layer
   - This project is a sort of proof of concept
@@ -18,31 +17,34 @@ Theoretically, one could even hide a whole malware into a photo, which could be 
 Randsteg is a program that hides your encrypted password into a png file.
 Its name is short for RANDomized STEGanography.
 
-The general idea: you can hide your data into a png file by using bit operations on to the pixels of an image. 
+The general idea: you can hide your data into a png file by using bit operations on to *random* pixels of an image. 
 
 # Why use Randsteg? (TLDR)
-Randsteg will:
 1. hide your encrypted password (via aes-cbc with a masterkey) and not the password itself
 2. hide individual bits of the ciphertext into cryptographically secure randomized coordinates of pixels throughout the png file
-3. only log the encrypted coordinates and not the ciphertext, which will be used for decryption (along side with an encrypted filepath of the png, id of the password, length of ciphertext and more stuff for necessary logging)
+3. only log the encrypted coordinates and not the ciphertext, which will be used for decryption (along side with an id of the password, length of ciphertext and more stuff for necessary logging)
 4. turn your png of your puppy into a password storage (which is pretty neat)
 
-# Detailed Procedure
-1. Stegnography is detectable, if for example a program writes the individual pixels into a field of pixels that have the same set of bits, in other words, have the same color. To prevent this issue, this program will distribute the bits of the input data into randomized coordinates of a photo
-  - For the randomized coordinates, a CSPRNG (Cryptographically Secure Pseudorandom Number Generator) from Openssl lib is used, which makes it hard to replicate the results
-2. The coordinates will then be encrypted with the masterkey and stored into a log file, which keeps track of the necessary information to extract the input data out of the png file.
-  - This doesn't prevent the issue of the target bits to be potentially detected.
+The major feature of randsteg is point number 2.  
+  - This doesn't prevent the issue of target bits to be potentially detected.
   - However, it would be hard for a detection program to make sense out of the extracted bits, as they will be randomly distributed throughout the png file and the only way to keep the order of the bits is to crack the hash in the log file or bruteforcing combinations of the bits.
-3. Alongside the coordinates, information like:
-  - id for password so you can navigate through multiple passwords
-  - hashing algorithm id (for now, only aes-cbc exists)
-  - encrypted filepath of the png the password is hid in (with its string length)
-  - encrypted coordinates of the pixels where the bits of the hashed passwords are distributed to (with its string length)
-  - maximum amount of digits that the largest number between the width and height of the png file has (so if 500 x 1920px = 4 digits)
-  will be stored
 
-The decryption process will:
-1. try to decrypt the coordinates and filepath with the masterkey
-2. extract the least significant bits of the pixels regarding the coordinates
-3. combine the extracted bits and reproduce the encrypted password
-4. decrypt the password with a masterkey
+# Detailed Procedure
+## Procedure: bits injection
+Randsteg will
+1. encrypt inputted password via aes with masterkey
+2. use a CSPRNG (Cryptographically Secure Pseudorandom Number Generator) from Openssl lib for the randomized coordinates, which makes it hard to replicate results
+3. encrypt coordinates via aes with masterkey and store it into a log file
+4. store following additional information in the log file:
+  - id for password so you can navigate through multiple passwords
+  - encrypted coordinates of the pixels, where bits of the hashed password are distributed to (with its string length)
+  - maximum amount of digits that the largest number between the width and height of the png file has (so if 500 x 1920px = 4 digits)
+  - salts and ivs used to randomize ciphertext
+
+## Procedure: bits extraction
+Randsteg will:
+1. authenticate user via masterkey
+2. try to decrypt coordinates from log file 
+3. extract least significant bits of the pixels from given filepath to png according to decrypted coordinates
+4. combine extracted bits and reproduce the encrypted password
+5. decrypt password with masterkey
