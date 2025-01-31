@@ -16,8 +16,10 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key, uns
     int ciphertext_len;
 
     /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new()))
-        // handleErrors();
+    if(!(ctx = EVP_CIPHER_CTX_new())) {
+		perror("failed to load context");
+		exit(EXIT_FAILURE);
+	}
 
     /*
      * Initialise the encryption operation. IMPORTANT - ensure you use a key
@@ -26,14 +28,20 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key, uns
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits
      */
-    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
+		perror("AES: fail");
+		exit(EXIT_FAILURE);
+	}
         // handleErrors();
 
     /*
      * Provide the message to be encrypted, and obtain the encrypted output.
      * EVP_EncryptUpdate can be called multiple times if necessary
      */
-    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
+		perror("AES UPDATE: fail");
+		exit(EXIT_FAILURE);
+	}
         // handleErrors();
     ciphertext_len = len;
 
@@ -42,7 +50,10 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key, uns
      * this stage.
 	 * Pads the plaintext if it is not a product of 128 bits long
      */
-    if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
+    if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
+		perror("AES FINAL: fail");
+		exit(EXIT_FAILURE);
+	}
         // handleErrors();
     ciphertext_len += len;
 

@@ -87,6 +87,7 @@ int pbkdf2(char *passwd, unsigned char *ciphertext, int ciphertext_len, char *sa
 	return 0;
 }
 
+/*
 int main() {
 	clock_t start_time = clock();
 	char ciphertext[EVP_MAX_MD_SIZE];
@@ -102,3 +103,4 @@ int main() {
 
 	return 0;
 }
+*/

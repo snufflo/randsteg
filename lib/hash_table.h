@@ -1,7 +1,9 @@
+#pragma once
+
 #include <stdio.h>
 #include <stdlib.h>
 
-#define TABLE_SIZE 1000
+#define TABLE_SIZE 2000
 
 typedef struct Node {
 	int width;
@@ -15,14 +17,10 @@ typedef struct HashTable {
 } HashTable;
 
 
-HashTable *create_table(int length) {
-}
+HashTable *create_table(int length);
 
-int hash(int width, int height, int depth) {
-}
+int hash(int width, int height, int depth);
 
-int search(HashTable table, int width, int height, int depth) {
-}
+int search(HashTable *table, int width, int height, int depth);
 
-void insert(HashTable table, int width, int height, int depth) {
-}
+void insert(HashTable *table, int width, int height, int depth);

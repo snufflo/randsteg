@@ -1,19 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-
-#define TABLE_SIZE 2000
-
-typedef struct Node {
-	int width;
-	int height;
-	int depth;
-	struct Node *next;
-} Node;
-
-typedef struct HashTable {
-	Node *arr[TABLE_SIZE];
-} HashTable;
-
+#include "../lib/hash_table.h"
 
 HashTable *create_table(int length) {
 	HashTable *table = (HashTable*)malloc(sizeof(HashTable));
@@ -38,7 +25,7 @@ int search(HashTable *table, int width, int height, int depth) {
 	int index = hash(width, height, depth);
 	Node *node = table->arr[index];
 
-	while (node->key != NULL) {
+	while (node->next != NULL) {
 		if (	node->width == width && 
 				node->height == height &&
 				node->depth == depth) {
