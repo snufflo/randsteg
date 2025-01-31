@@ -141,11 +141,8 @@ void unpad_coor(unsigned char *pad, int *row, int *column, int max_digits, int l
 }
 
 void distribute_bits(const char *filepath, struct png_info *png, char *hash, int *c_row, int *c_column) {
-	HashTable table;
+	HashTable *table = create_table();
 	// one char is 8bits long and we want to distribute the bits in each pixel coordinates
-	int bits_in_hash = (int)strlen(hash) * 8;
-	c_row = malloc(bits_in_hash * sizeof(int));
-	c_column = malloc(bits_in_hash * sizeof(int));
 	int tmp_depth;
 	unsigned char tmp_bit;
 
@@ -162,19 +159,22 @@ void distribute_bits(const char *filepath, struct png_info *png, char *hash, int
 			tmp_bit = (hash[i] >> j) & 1;
 
 			tmp_depth = generate_rand_num(0, 3);
-			c_row[j] = generate_rand_num(0, png->width);
-			c_column[j] = generate_rand_num(0, png->height);
+			c_row[j*i] = generate_rand_num(0, png->height - 1);
+			// each pixel has 4 bytes and each row arrays in png_bytep has column * 4 arrays each with 4 pixel channels
+			c_column[j*i] = generate_rand_num(0, png->width - 1) * 4 + tmp_depth;
 
 			// if generated numbers don't overlap with previous values
-			if (!search(&table, c_row[j], c_column[j], tmp_depth)) {
-				// update hash table with new values
-				insert(&table, c_row[j], c_column[j], tmp_depth);
-				// set offset to the given RGB or A channel
-				c_column[j] += tmp_depth * 4;
+			if (!search(table, c_row[j*i], c_column[j*i], tmp_depth)) {
+				insert(table, c_row[j*i], c_column[j*i], tmp_depth);
 
 				// add the bit to the target pixel:
+				// set offset to the given RGB or A channel
+				int pixel_offset = c_column[j*i];
+
+				png_bytep row = png->row[c_row[j*i]]; // get row pointer
 				// 0xFE in binary: 11111110
-				png->row[c_row[j]][c_column[j]] = (png->row[c_row[j]][c_column[j]] & 0xFE) | tmp_bit;
+				row[pixel_offset] = (row[pixel_offset] & 0xFE) | (tmp_bit & 1);
+
 				// only iterate when the if condition is true
 				j++;
 			}
@@ -216,6 +216,8 @@ void steg_in_png(const char *filepath, char *passwd_id, unsigned char *passwd, u
 	encrypt(passwd, strlen(passwd), masterkey, png_log.iv_passwd, passwd_hash);
 
 	int bits_in_hash = (int)strlen(passwd_hash) * 8; // one char = 8 bits long
+	c_row = calloc(bits_in_hash, sizeof(int));
+	c_column = calloc(bits_in_hash, sizeof(int));
 	// 	this prevents endless looping
 	if ((png.width * png.height * 4) / 2 < bits_in_hash) {
 		perror("png file is too small for password\n");
@@ -541,7 +543,7 @@ int authenticate(char *masterkey) {
 
 void get_usrinput_steg(char *passwd, char *passwd_id, char *masterkey) {
 	printf("Enter id of password: ");
-	if (!fgets(passwd_id, sizeof(passwd_id), stdin)) {
+	if (!fgets(passwd_id, 100, stdin)) {
 		perror("FGETS: error");
 		exit(EXIT_FAILURE);
 	}
@@ -549,7 +551,7 @@ void get_usrinput_steg(char *passwd, char *passwd_id, char *masterkey) {
 	printf("\n");
 
 	printf("Enter password you want to hide: ");
-	if (!fgets(passwd, sizeof(passwd), stdin)) {
+	if (!fgets(passwd, MAX_PASSWD_LEN, stdin)) {
 		perror("FGETS: error");
 		exit(EXIT_FAILURE);
 	}
@@ -557,7 +559,7 @@ void get_usrinput_steg(char *passwd, char *passwd_id, char *masterkey) {
 	printf("\n");
 
 	printf("Enter your masterkey: ");
-	if (!fgets(masterkey, sizeof(masterkey), stdin)) {
+	if (!fgets(masterkey, MAX_PASSWD_LEN, stdin)) {
 		perror("FGETS: error");
 		exit(EXIT_FAILURE);
 	}

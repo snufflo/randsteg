@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "../lib/hash_table.h"
 
-HashTable *create_table(int length) {
+HashTable *create_table() {
 	HashTable *table = (HashTable*)malloc(sizeof(HashTable));
 	for (int i=0;i<TABLE_SIZE;i++) {
 		table->arr[i] = NULL;
@@ -15,18 +15,23 @@ int hash(int width, int height, int depth) {
 	// TODO: fix possibility for collisions
 	unsigned int hash = 17;
     hash = hash * 31 + width;
-    hash += 31 + height;
-    hash += 31 + depth;
+    hash = hash * 31 + height;
+    hash = hash * 31 + depth;
 
 	return hash % TABLE_SIZE;
 }
 
+// @return 1 if there is a value already, 0 if not
 int search(HashTable *table, int width, int height, int depth) {
+	if (!table) {
+		perror("Table is null");
+		exit(EXIT_FAILURE);
+	}
 	int index = hash(width, height, depth);
 	Node *node = table->arr[index];
 
-	while (node->next != NULL) {
-		if (	node->width == width && 
+	while (node != NULL) {
+		if (node->width == width && 
 				node->height == height &&
 				node->depth == depth) {
 			return 1;

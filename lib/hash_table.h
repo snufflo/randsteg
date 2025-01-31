@@ -17,7 +17,7 @@ typedef struct HashTable {
 } HashTable;
 
 
-HashTable *create_table(int length);
+HashTable *create_table();
 
 int hash(int width, int height, int depth);
 
