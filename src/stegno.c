@@ -32,11 +32,23 @@ struct png_info {
 
 void fprint_to_hex(FILE *fptr, unsigned char *buf, int buf_len) {
 	for (int i=0;i<buf_len;i++) {
+		if (buf[i] == 0) {
+			break;
+		}
 		fprintf(fptr, "%02x", buf[i]);
 	}
 }
 
-void hex_to_bytes(const char *hex, unsigned char *output, int *output_len) {
+void bytes_to_hex(unsigned char *buf, int buf_len, unsigned char *hex) {
+	for (int i=0;i<buf_len;i++) {
+		if (buf[i] == 0) {
+			break;
+		}
+		sprintf(hex + (i * 2), "%02x", buf[i]);
+	}
+}
+
+void hex_to_bytes(const char *hex, unsigned char *output) {
 	size_t hex_len = strlen(hex);
 
 	if (hex_len % 2 != 0) {
@@ -44,21 +56,21 @@ void hex_to_bytes(const char *hex, unsigned char *output, int *output_len) {
 		exit(EXIT_FAILURE);
 	
 	}
-	*output_len = hex_len / 2;
+	int output_len = hex_len / 2;
 	
-	for (size_t i = 0; i < *output_len; i++) {
+	for (size_t i = 0; i < output_len; i++) {
 		sscanf(hex + (i * 2), "%2hhx", &output[i]);
 	}
 }
 
 int calc_16_mult(int len) {
-	for (int multiplier = 1;multiplier<20;multiplier++) {
-		if (len <= 16)
-			return multiplier;
-		len /= 16;
+	int multiplier = 0;
+	while (len >= 16) {
+		len -= 16;
+		multiplier++;
 	}
 
-	return -1;
+	return multiplier;
 }
 
 /* ----------------------------------------
@@ -93,10 +105,16 @@ int how_many_digits(int width, int height) {
 // @param max_digits number of digits that the highest element in row or column has
 // @param len length of a row or column array
 void pad_coor(unsigned char *pad, int *row, int *column, int max_digits, int len) {
+	// TODO: FIX ITERATION COUNT
 	unsigned char *tmp = pad;
 
-	for (int i=0;i<max_digits+1;i++) {
+	for (int i=0;i<len;i++) {
 		for (int j=1;row[i] * pow(10, j) < pow(10, max_digits);j++) {
+			if (row[i] == 0) { // to prevent endless loop
+				memcpy(pad, "0000", 4);
+				pad += 4;
+				break;
+			}
 			*pad = '0';
 			pad++;
 		}
@@ -105,6 +123,11 @@ void pad_coor(unsigned char *pad, int *row, int *column, int max_digits, int len
 
 		for (int j=1;column[i] * pow(10, j) < pow(10, max_digits);j++) {
 			// print '0' to file right next to it
+			if (column[i] == 0) {
+				memcpy(pad, "0000", 4);
+				pad += 4;
+				break;
+			}
 			*pad = '0';
 			pad++;
 		}
@@ -145,6 +168,7 @@ void distribute_bits(const char *filepath, struct png_info *png, char *hash, int
 	// one char is 8bits long and we want to distribute the bits in each pixel coordinates
 	int tmp_depth;
 	unsigned char tmp_bit;
+	int n = 0;
 
 	if (c_row == NULL || c_column == NULL) {
 		perror("Error allocating memory for c_row or c_column");
@@ -154,24 +178,25 @@ void distribute_bits(const char *filepath, struct png_info *png, char *hash, int
 	// distribute bits of passwd into the png byte array
 	for (int i=0;i<strlen(hash);i++) {
 		for (int j=0;j<8;) {
+			n = j + 8 * i;
 			tmp_bit = 0;
-			// set target j-th bit from i-th-hash-byte
+			// set target (j+1)-th bit from i-th-hash-byte
 			tmp_bit = (hash[i] >> j) & 1;
 
 			tmp_depth = generate_rand_num(0, 3);
-			c_row[j*i] = generate_rand_num(0, png->height - 1);
+			c_row[n] = generate_rand_num(0, png->height - 1);
 			// each pixel has 4 bytes and each row arrays in png_bytep has column * 4 arrays each with 4 pixel channels
-			c_column[j*i] = generate_rand_num(0, png->width - 1) * 4 + tmp_depth;
+			c_column[n] = generate_rand_num(0, png->width - 1);
 
 			// if generated numbers don't overlap with previous values
-			if (!search(table, c_row[j*i], c_column[j*i], tmp_depth)) {
-				insert(table, c_row[j*i], c_column[j*i], tmp_depth);
+			if (!search(table, c_row[n], c_column[n], tmp_depth)) {
+				insert(table, c_row[n], c_column[n], tmp_depth);
 
 				// add the bit to the target pixel:
 				// set offset to the given RGB or A channel
-				int pixel_offset = c_column[j*i];
+				int pixel_offset = c_column[n] * 4 + tmp_depth;
 
-				png_bytep row = png->row[c_row[j*i]]; // get row pointer
+				png_bytep row = png->row[c_row[n]]; // get row pointer
 				// 0xFE in binary: 11111110
 				row[pixel_offset] = (row[pixel_offset] & 0xFE) | (tmp_bit & 1);
 
@@ -243,14 +268,14 @@ void steg_in_png(const char *filepath, char *passwd_id, unsigned char *passwd, u
 	png_log.max_digits = how_many_digits(png.width, png.height);
 	int size_of_padded = bits_in_hash * 2 * png_log.max_digits;
 
-	png_log.multiplier = calc_16_mult(sizeof(size_of_padded));
+	png_log.multiplier = calc_16_mult(size_of_padded);
 	if (png_log.multiplier <= 0) {
 		perror("multiplier == 0");
 		exit(EXIT_FAILURE);
 	}
 	int coor_ciphertext_len = png_log.multiplier * 16 * png_log.max_digits * 2;
 	png_log.encrypted_coor = calloc(coor_ciphertext_len, sizeof(char));
-	unsigned char *padded = malloc(size_of_padded * sizeof(char));
+	unsigned char *padded = calloc(size_of_padded, sizeof(char));
 
 	RAND_bytes(png_log.iv_coor, 16);
 	pad_coor(padded, c_row, c_column, png_log.max_digits, bits_in_hash);
@@ -335,7 +360,7 @@ unsigned int tokenize_log(struct png_log *png_log, char *passwd_id) {
 	}
 	// fptr should be in the right line now
 	
-	// TODO: extract and tokenize the whole string
+	// TODO: with upper process, fptr is past the first delimiter -> parsing integer 1 and 2 might be incorrect!
 	png_log->multiplier = parse_integer(fptr_log, 4, 1);
 
 	png_log->max_digits = parse_integer(fptr_log, 10, 2);
@@ -379,15 +404,15 @@ int decrypt_steg(char *passwd_id, unsigned char *masterkey, char *filepath, unsi
 	png_log.iv_passwd = calloc(17, sizeof(unsigned char));
 
 	unsigned int encrypted_hexcoor_len = tokenize_log(&png_log, passwd_id);
+	unsigned int encrypted_coor_len = encrypted_hexcoor_len/2;
 
 	// decrypted coor must be at least the len of encrypted coor (to be safe)
-	unsigned char *padded_coor = calloc(encrypted_hexcoor_len/2 + 1, sizeof(unsigned char));
-	unsigned char *encrypted_coor = calloc(encrypted_hexcoor_len/2 + 1, sizeof(unsigned char)); // hex -> binary, hex is represented with two chars, so byte is half as long
+	unsigned char *padded_coor = calloc(encrypted_coor_len + 1, sizeof(unsigned char));
+	unsigned char *encrypted_coor = calloc(encrypted_coor_len + 1, sizeof(unsigned char)); // hex -> binary, hex is represented with two chars, so byte is half as long
 	unsigned char *hex_encrypted_coor = calloc(encrypted_hexcoor_len + 1, sizeof(unsigned char));
 
 	// convert hex data from log into original bytes
-	int encrypted_coor_len;
-	hex_to_bytes(hex_encrypted_coor, encrypted_coor, &encrypted_coor_len);
+	hex_to_bytes(hex_encrypted_coor, encrypted_coor);
 	free(hex_encrypted_coor);
 	hex_encrypted_coor = NULL;
 
@@ -433,8 +458,8 @@ int decrypt_steg(char *passwd_id, unsigned char *masterkey, char *filepath, unsi
 // encrypt masterkey with pbkdf2
 int masterkey_init() {
 	char masterkey[MAX_PASSWD_LEN] = {0};
-	int salt_len = 17;
-	unsigned char salt[salt_len];
+	int salt_len = 16;
+	unsigned char salt[16] = {0};
 
 	printf("Enter new masterkey: ");
 	if (fgets(masterkey, sizeof(masterkey), stdin) == NULL) {
@@ -448,7 +473,6 @@ int masterkey_init() {
 		printf("OPENSSL: Error generating random bytes");
 		exit(EXIT_FAILURE);
 	}
-	salt[16] = '\0';
 
 	unsigned char ciphertext[EVP_MAX_MD_SIZE] = {0};
 	pbkdf2(masterkey, ciphertext, EVP_MAX_MD_SIZE, salt, salt_len);
@@ -459,6 +483,8 @@ int masterkey_init() {
 		return 1;
 	}
 
+	fprint_to_hex(fptr, salt, 16);
+	write_delimiter(fptr);
 	fprint_to_hex(fptr, ciphertext, EVP_MAX_MD_SIZE);
 
 	fclose(fptr);
@@ -468,13 +494,16 @@ int masterkey_init() {
 
 // @brief confirms masterkey and saves it in [masterkey]
 int authenticate(char *masterkey) {
-	int num;
-	int max_attempts = 5;
-	char ciphertext_user[EVP_MAX_MD_SIZE + 1] = {0};
-	char ciphertext_file[EVP_MAX_MD_SIZE + 1] = {0};
-	char salt[17] = {0};
-	char log_buf[EVP_MAX_MD_SIZE + 16 + 1] = {0}; // + salt len + null
-	char *tmp;
+	int attempts = 5;
+	int hexsalt_len = 16 * 2;
+	int hexciphertext_len = EVP_MAX_MD_SIZE * 2;
+	unsigned char hexciphertext_user[EVP_MAX_MD_SIZE * 2 + 1] = {0}; // * 2 for hex format
+	unsigned char ciphertext_user[EVP_MAX_MD_SIZE + 1] = {0}; // * 2 for hex format
+	unsigned char hexciphertext_file[EVP_MAX_MD_SIZE * 2 + 1] = {0};
+	unsigned char hex_salt[16 * 2] = {0};
+	unsigned char salt[16] = {0};
+	unsigned char log_buf[(EVP_MAX_MD_SIZE + 16) * 2 + 1] = {0}; // + salt len + null
+	unsigned char *tmp;
 
 	FILE *fptr = fopen("masterkey.txt", "r");
 	if (fptr == NULL) {
@@ -482,7 +511,14 @@ int authenticate(char *masterkey) {
 		exit(EXIT_FAILURE);
 	}
 
-	for (int attempts=0;max_attempts>0;attempts++) {
+	// extract whole string from masterkey.txt
+	if (fgets(log_buf, hexciphertext_len + hexsalt_len + 2, fptr) == NULL) {
+		perror("failed to get masterkey hash");
+		exit(EXIT_FAILURE);
+	}
+	fclose(fptr);
+
+	for (attempts=5;attempts != 0;attempts--) {
 		// get user input
 		printf("Enter masterkey: ");
 		if (fgets(masterkey, sizeof(masterkey), stdin) == NULL) {
@@ -492,56 +528,36 @@ int authenticate(char *masterkey) {
 		masterkey[strcspn(masterkey, "\n")] = '\0'; // Replace '\n' with '\0'
 		printf("\n");
 
-		for (int i=0;i<17;i++) {
-			salt[i] = (char)getc(fptr);
-			if (salt[i] == 0) {
-				perror("error reading masterkey.txt");
-				exit(EXIT_FAILURE);
-			}
-			else if (salt[i] == '$') {
-				break;
-			}
-		}
-		getc(fptr); // skip delimiter
-		for (int i=0;i<EVP_MAX_MD_SIZE+1;i++) {
-			ciphertext_file[i] = (char)getc(fptr);
-			if (ciphertext_file[i] == 0) {
-				break;
-			}
-		}
-		fclose(fptr);
+		tmp = strstr(log_buf, "$");
+		memcpy(hex_salt, log_buf, tmp - log_buf); // extract salt hex
+		tmp++; // skip delimiter
+		strncpy(hexciphertext_file, tmp, hexciphertext_len); // extract masterkey hex
+														  //
+		hex_to_bytes(hex_salt, salt);
 
 		// hash masterkey and compare with masterkey hash log
-		pbkdf2(masterkey, ciphertext_user, EVP_MAX_MD_SIZE + 1, salt, 16);
+		pbkdf2(masterkey, ciphertext_user, hexciphertext_len/2, salt, 16);
+		bytes_to_hex(ciphertext_user, EVP_MAX_MD_SIZE, hexciphertext_user);
 
-		if (fgets(log_buf, EVP_MAX_MD_SIZE + 1, fptr) == NULL) {
-			perror("failed to get masterkey hash");
-			return 1;
-		}
-
-		tmp = strstr(log_buf, "$"); // skip salt
-		memcpy(salt, log_buf, tmp - log_buf); // is this correct?
-		tmp++; // skip delimiter
-		strncpy(ciphertext_file, tmp, EVP_MAX_MD_SIZE + 1);
-
-		if (memcmp(ciphertext_file, ciphertext_user, EVP_MAX_MD_SIZE)) {
+		if (!memcmp(hexciphertext_file, hexciphertext_user, hexciphertext_len)) {
 			printf("masterkey confirmed\n");
-			
 			return 0;
 		}
 
-		if (max_attempts < attempts) {
-			// TODO: report log
-			perror("Exceeded failed attempts.\n");
-			exit(EXIT_FAILURE);
-		}
 		printf("Remaining attempts: %d\n", attempts);
+		memset(hexciphertext_user, 0, EVP_MAX_MD_SIZE * 2 + 1); // * 2 for hex format
+		memset(ciphertext_user, 0, EVP_MAX_MD_SIZE + 1); // * 2 for hex format
+		memset(hexciphertext_file, 0, EVP_MAX_MD_SIZE * 2 + 1);
+		memset(salt, 0, 16);
 	}
+
+	perror("Exceeded failed attempts.\n");
+	exit(EXIT_FAILURE);
 
 	return 1;
 }
 
-void get_usrinput_steg(char *passwd, char *passwd_id, char *masterkey) {
+void get_usrinput_steg(char *passwd_id, char *passwd, char *masterkey) {
 	printf("Enter id of password: ");
 	if (!fgets(passwd_id, 100, stdin)) {
 		perror("FGETS: error");
@@ -587,7 +603,7 @@ int main(int argc, char *argv[]) {
 	write_png(output_file, rowp, width, height);
 	*/
 
-	if (argc == 3) {
+	if (argc == 4) {
 		if (strncmp(argv[1], "-d", 2) == 0) { // extract bits and decrypt password
 			printf("option: decrypt detected\n");
 			char passwd[MAX_PASSWD_LEN] = {0};

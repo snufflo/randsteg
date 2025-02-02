@@ -6,9 +6,8 @@
 #define MAX_ID_LEN 50
 
 int parse_log(FILE *fptr, char *arr, int len_arr, unsigned int num) {
-	FILE *tmp_fptr = fptr;
+	long original_fptr_pos = ftell(fptr); // Save original position
 	char *tmp_id = calloc(len_arr, sizeof(char));
-	char *tmp_p = tmp_id;
 	int chr;
 	int len_str = 0;
 	int status = 0;
@@ -23,7 +22,7 @@ int parse_log(FILE *fptr, char *arr, int len_arr, unsigned int num) {
 		// TODO: position fptr to the [num]th element
 		// get chr until first delimiter
 		len_str = 0;
-		for (;tmp_id[len_str] != '$' || tmp_id[len_str] != '\n';len_str++) {
+		for (;len_str < len_arr;len_str++) {
 			chr = getc(fptr);
 			// if getc gets an EOF
 			if (chr == 0) {
@@ -31,14 +30,14 @@ int parse_log(FILE *fptr, char *arr, int len_arr, unsigned int num) {
 				status = 1;
 				break;
 			}
+			else if ((char) chr == '$' || (char) chr == '\n')
+				break;
+				
 			tmp_id[len_str] = (char) chr;
-			tmp_id++;
 		}
-		tmp_id = tmp_p;
 	}
 
-	fptr = tmp_fptr;
-	tmp_fptr = NULL;
+	fseek(fptr, original_fptr_pos, SEEK_SET); // Restore position
 
 	if (len_str > len_arr) {
 		perror("LOG: allocated space is too small");
