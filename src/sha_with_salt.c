@@ -72,7 +72,7 @@ int sha256(char *passwd, char *ciphertext, int ciphertext_len) {
 	return 0;
 }
 
-int pbkdf2(char *passwd, unsigned char *ciphertext, int ciphertext_len, char *salt, int salt_len) {
+int pbkdf2(char *passwd, unsigned char *ciphertext, int ciphertext_len, unsigned char *salt, int salt_len) {
 	int passwd_len = strlen(passwd);
 
 	// leverage security with user experience. 1000000 iterations take roughly 1.13 seconds on my laptop

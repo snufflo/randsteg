@@ -32,9 +32,6 @@ struct png_info {
 
 void fprint_to_hex(FILE *fptr, unsigned char *buf, int buf_len) {
 	for (int i=0;i<buf_len;i++) {
-		if (buf[i] == 0) {
-			break;
-		}
 		fprintf(fptr, "%02x", buf[i]);
 	}
 }
@@ -48,8 +45,8 @@ void bytes_to_hex(unsigned char *buf, int buf_len, unsigned char *hex) {
 	}
 }
 
-void hex_to_bytes(const char *hex, unsigned char *output) {
-	size_t hex_len = strlen(hex);
+int hex_to_bytes(const char *hex, int hex_len, unsigned char *output) {
+	int chrs = 0;
 
 	if (hex_len % 2 != 0) {
 		fprintf(stderr, "Invalid hex string: must have an even length.\n");
@@ -59,18 +56,11 @@ void hex_to_bytes(const char *hex, unsigned char *output) {
 	int output_len = hex_len / 2;
 	
 	for (size_t i = 0; i < output_len; i++) {
+		chrs++;
 		sscanf(hex + (i * 2), "%2hhx", &output[i]);
 	}
-}
 
-int calc_16_mult(int len) {
-	int multiplier = 0;
-	while (len >= 16) {
-		len -= 16;
-		multiplier++;
-	}
-
-	return multiplier;
+	return chrs;
 }
 
 /* ----------------------------------------
@@ -105,34 +95,31 @@ int how_many_digits(int width, int height) {
 // @param max_digits number of digits that the highest element in row or column has
 // @param len length of a row or column array
 void pad_coor(unsigned char *pad, int *row, int *column, int max_digits, int len) {
-	// TODO: FIX ITERATION COUNT
 	unsigned char *tmp = pad;
 
 	for (int i=0;i<len;i++) {
 		for (int j=1;row[i] * pow(10, j) < pow(10, max_digits);j++) {
 			if (row[i] == 0) { // to prevent endless loop
-				memcpy(pad, "0000", 4);
-				pad += 4;
+				memset(pad, '0', max_digits);
+				pad += max_digits;
 				break;
 			}
 			*pad = '0';
 			pad++;
 		}
-		pad += sprintf(pad, "%d", row[i]);
-		// print row[i] to file right next to it
+		pad += sprintf(pad, "%d", row[i]); // print row[i] to file right next to it
 
 		for (int j=1;column[i] * pow(10, j) < pow(10, max_digits);j++) {
 			// print '0' to file right next to it
 			if (column[i] == 0) {
-				memcpy(pad, "0000", 4);
-				pad += 4;
+				memset(pad, '0', max_digits);
+				pad += max_digits;
 				break;
 			}
 			*pad = '0';
 			pad++;
 		}
-		pad += sprintf(pad, "%d", column[i]);
-		// print column[i] to file right next to it
+		pad += sprintf(pad, "%d", column[i]); // print column[i] to file right next to it
 	}
 	pad = tmp;
 }
@@ -165,7 +152,6 @@ void unpad_coor(unsigned char *pad, int *row, int *column, int max_digits, int l
 
 void distribute_bits(const char *filepath, struct png_info *png, char *hash, int *c_row, int *c_column) {
 	HashTable *table = create_table();
-	// one char is 8bits long and we want to distribute the bits in each pixel coordinates
 	int tmp_depth;
 	unsigned char tmp_bit;
 	int n = 0;
@@ -175,21 +161,19 @@ void distribute_bits(const char *filepath, struct png_info *png, char *hash, int
 		exit(EXIT_FAILURE);
 	}
 
-	// distribute bits of passwd into the png byte array
-	for (int i=0;i<strlen(hash);i++) {
+	
+	for (int i=0;i<strlen(hash);i++) { // distribute bits of passwd into the png byte array
 		for (int j=0;j<8;) {
-			n = j + 8 * i;
+			n = j + 8 * i; // each pixel has 4 bytes and each row arrays in png_bytep has column * 4 arrays each with 4 pixel channels
 			tmp_bit = 0;
-			// set target (j+1)-th bit from i-th-hash-byte
-			tmp_bit = (hash[i] >> j) & 1;
+
+			tmp_bit = (hash[i] >> j) & 1; // set target (j+1)-th bit from i-th-hash-byte
 
 			tmp_depth = generate_rand_num(0, 3);
-			c_row[n] = generate_rand_num(0, png->height - 1);
-			// each pixel has 4 bytes and each row arrays in png_bytep has column * 4 arrays each with 4 pixel channels
+			c_row[n] = generate_rand_num(0, png->height - 1); 
 			c_column[n] = generate_rand_num(0, png->width - 1);
 
-			// if generated numbers don't overlap with previous values
-			if (!search(table, c_row[n], c_column[n], tmp_depth)) {
+			if (!search(table, c_row[n], c_column[n], tmp_depth)) { // if generated numbers don't overlap with previous values
 				insert(table, c_row[n], c_column[n], tmp_depth);
 
 				// add the bit to the target pixel:
@@ -197,11 +181,9 @@ void distribute_bits(const char *filepath, struct png_info *png, char *hash, int
 				int pixel_offset = c_column[n] * 4 + tmp_depth;
 
 				png_bytep row = png->row[c_row[n]]; // get row pointer
-				// 0xFE in binary: 11111110
-				row[pixel_offset] = (row[pixel_offset] & 0xFE) | (tmp_bit & 1);
+				row[pixel_offset] = (row[pixel_offset] & 0xFE) | (tmp_bit & 1); // 0xFE in binary: 11111110
 
-				// only iterate when the if condition is true
-				j++;
+				j++; // only iterate when the if condition is true
 			}
 		}
 	}
@@ -212,9 +194,8 @@ void distribute_bits(const char *filepath, struct png_info *png, char *hash, int
 		exit(EXIT_FAILURE);
 	}
 
-	// write manipulated pixels into png
 	// TODO: custom name of file in argv
-	write_png("stegged.png", png->row, png->width, png->height);
+	write_png("stegged.png", png->row, png->width, png->height); // write manipulated pixels into png
 	fclose(png_fptr);
 
 }
@@ -223,35 +204,39 @@ void steg_in_png(const char *filepath, char *passwd_id, unsigned char *passwd, u
 	struct png_info png;
 	struct png_log png_log;
 	unsigned char passwd_hash[EVP_MAX_MD_SIZE + 1] = {0};
+	unsigned char masterkey_hash[32] = {0};
+	int ciphertext_len = 0;
 	int *c_row;
 	int *c_column;
 
-	// read png into row and get width and height
-	read_png(filepath, &png.row, &png.width, &png.height);
+	read_png(filepath, &png.row, &png.width, &png.height); // read png into row and get width and height
 
-	png_log.iv_passwd = calloc(17, sizeof(char));
-	png_log.iv_coor = calloc(17, sizeof(char));
+	png_log.iv_passwd = calloc(16, sizeof(char));
+	png_log.iv_coor = calloc(16, sizeof(char));
 	if (png_log.iv_coor == NULL || png_log.iv_passwd == NULL) {
 		perror("CALLOC: png_log iv");
 		exit(EXIT_FAILURE);
 	}
 
+	// CAUTION: aes can output a nullterminator in the middle of the ciphertext!
+	// CAUTION: if aes_256s input is a multiple of 16, it adds ANOTHER 16 BYTES TO IT
 	// generate random iv and encrypt passwd with masterkey
 	RAND_bytes(png_log.iv_passwd, 16);
-	encrypt(passwd, strlen(passwd), masterkey, png_log.iv_passwd, passwd_hash);
+	pbkdf2(masterkey, masterkey_hash, 32, png_log.iv_passwd, 16);
+	ciphertext_len = encrypt(passwd, strlen(passwd), masterkey_hash, png_log.iv_passwd, passwd_hash);
 
-	int bits_in_hash = (int)strlen(passwd_hash) * 8; // one char = 8 bits long
+	int bits_in_hash = ciphertext_len * 8; // one char = 8 bits long
 	c_row = calloc(bits_in_hash, sizeof(int));
 	c_column = calloc(bits_in_hash, sizeof(int));
-	// 	this prevents endless looping
-	if ((png.width * png.height * 4) / 2 < bits_in_hash) {
+	
+	if ((png.width * png.height * 4) / 2 < bits_in_hash) { // this prevents endless looping when inserting randomly generate coordinates to hashtable later
 		perror("png file is too small for password\n");
 		exit(EXIT_FAILURE);
 	}
 
 	distribute_bits(filepath, &png, passwd_hash, c_row, c_column);
 
-	// Format: passwd_id $ multipliert_16 $ max_digits $ encrypted_coordinates $ iv_passwd $ iv_coor
+	// Format: passwd_id $ multiplier_16 $ max_digits $ encrypted_coordinates $ iv_passwd $ iv_coor
 	// 16, because aes works in 16 byte block operations
 	FILE *log_fptr = fopen("log.txt", "r+");
 	if (log_fptr == NULL) {
@@ -264,24 +249,32 @@ void steg_in_png(const char *filepath, char *passwd_id, unsigned char *passwd, u
 	
 	//-------------preparations for logfile---------------
 	
-	// pad coordinates with 0s for logging
-	png_log.max_digits = how_many_digits(png.width, png.height);
-	int size_of_padded = bits_in_hash * 2 * png_log.max_digits;
+	png_log.max_digits = how_many_digits(png.width, png.height); 
+	int size_of_padded = bits_in_hash * 2 * png_log.max_digits; // bits_in_hash includes 8 (bits) and times 2 always is a multiple of 16
 
-	png_log.multiplier = calc_16_mult(size_of_padded);
+	png_log.multiplier = size_of_padded/16;
 	if (png_log.multiplier <= 0) {
 		perror("multiplier == 0");
 		exit(EXIT_FAILURE);
 	}
-	int coor_ciphertext_len = png_log.multiplier * 16 * png_log.max_digits * 2;
+	// additional 32 bytes for safety
+	int coor_ciphertext_len = png_log.multiplier * 16 * png_log.max_digits * 2 + 32;
 	png_log.encrypted_coor = calloc(coor_ciphertext_len, sizeof(char));
 	unsigned char *padded = calloc(size_of_padded, sizeof(char));
 
-	RAND_bytes(png_log.iv_coor, 16);
 	pad_coor(padded, c_row, c_column, png_log.max_digits, bits_in_hash);
 
-	coor_ciphertext_len = encrypt(padded, size_of_padded, masterkey, png_log.iv_coor, png_log.encrypted_coor);
+	RAND_bytes(png_log.iv_coor, 16);
+	pbkdf2(masterkey, masterkey_hash, 32, png_log.iv_coor, 16);
+	// size_of_padded is a multiple of 16 -> AES ADDS ADDITIONAL 16 BYTES AFTER
+	coor_ciphertext_len = encrypt(padded, size_of_padded, masterkey_hash, png_log.iv_coor, png_log.encrypted_coor);
 
+	png_log.multiplier = 0;
+	png_log.multiplier = coor_ciphertext_len/16; // calculate again, because aes might have added padding
+	if (png_log.multiplier <= 0) {
+		perror("multiplier == 0");
+		exit(EXIT_FAILURE);
+	}
 	//--------logfile write operations----------
 
 	// write passwd_id and '$'
@@ -302,11 +295,11 @@ void steg_in_png(const char *filepath, char *passwd_id, unsigned char *passwd, u
 	fprint_to_hex(log_fptr, png_log.encrypted_coor, coor_ciphertext_len);
 	write_delimiter(log_fptr);
 
-	// write iv and '$'
+	// write iv_passwd and '$'
 	fprint_to_hex(log_fptr, png_log.iv_passwd, 16);
 	write_delimiter(log_fptr);
 
-	// write encrypted_coordinate and '$'
+	// write iv_coor
 	fprint_to_hex(log_fptr, png_log.iv_coor, 16);
 
 	if (fwrite("\n", sizeof(char), 1, log_fptr) != 1) {
@@ -333,22 +326,19 @@ unsigned int tokenize_log(struct png_log *png_log, char *passwd_id) {
 		goto clean_up;
 	}
 
-	// find correct password id
-	while (int_chr != EOF) {
+	while (int_chr != EOF) { // find correct password id
 		int status = parse_log(fptr_log, png_log->passwd_id, MAX_ID_LEN, 0);
 		if (status == 2) {
 			perror("length of array is too small for log value");
 			goto clean_up;
 		}
 
-		if (strcmp(png_log->passwd_id, passwd_id) == 0) {
-			// success
+		if (strcmp(png_log->passwd_id, passwd_id) == 0) { // success
 			int_chr = getc(fptr_log); // skip delimiter
 			break;
 		}
 
-		// go to new line
-		while (chr != '\n' || int_chr != EOF) {
+		while (chr != '\n' || int_chr != EOF) { // go to new line
 			int_chr = getc(fptr_log);
 			if (int_chr == EOF) { // if EOF is detected
 				perror("Invalid password id");
@@ -357,33 +347,39 @@ unsigned int tokenize_log(struct png_log *png_log, char *passwd_id) {
 			chr = (char)int_chr;
 		}
 
-	}
-	// fptr should be in the right line now
+	} // fptr should be in the right line now
 	
-	// TODO: with upper process, fptr is past the first delimiter -> parsing integer 1 and 2 might be incorrect!
 	png_log->multiplier = parse_integer(fptr_log, 4, 1);
-
 	png_log->max_digits = parse_integer(fptr_log, 10, 2);
 
 	// gotta use a multiple of 16 bytes, because aes operates in 16 byte blocks
 	// the length of padded coordinates are 
 	// 2 (width and height per pixel) * 8 (bits per byte) * x (multiplier for 16) * 16 (block operation for aes)
-	int encrypted_coor_len = 2 * 8 * png_log->multiplier * 16;
+	int encrypted_coor_len = png_log->multiplier * 16;
 	png_log->encrypted_coor = calloc(encrypted_coor_len, sizeof(char));
 	if (png_log->encrypted_coor == NULL) {
 		perror("CALLOC: png_log->encrypted_coor");
 		goto clean_up;
 	}
-	png_log->iv_passwd = calloc(17, sizeof(char));
-	png_log->iv_coor = calloc(17, sizeof(char));
-	if (png_log->iv_passwd == NULL || png_log->iv_coor) {
-		perror("CALLOC: png_log iv");
+	
+	int hexencrypted_coor_len = encrypted_coor_len * 2;
+	unsigned char *hexencrypted_coor = calloc(hexencrypted_coor_len, sizeof(char)); 
+	if (hexencrypted_coor == NULL) {
+		perror("CALLOC: hexencrypted_coor");
 		goto clean_up;
 	}
+	unsigned char hex_iv_passwd[16*2] = {0};
+	unsigned char hex_iv_coor[16*2] = {0};
 
-	parse_log(fptr_log, png_log->encrypted_coor, encrypted_coor_len, 3);
-	parse_log(fptr_log, png_log->iv_passwd, 17, 4);
-	parse_log(fptr_log, png_log->iv_coor, 17, 5);
+	parse_log(fptr_log, hexencrypted_coor, hexencrypted_coor_len, 3);
+	parse_log(fptr_log, hex_iv_passwd, 16*2, 4);
+	parse_log(fptr_log, hex_iv_coor, 16*2, 5);
+
+	int hex_len = hex_to_bytes(hexencrypted_coor, hexencrypted_coor_len, png_log->encrypted_coor);
+	printf("decoded hex len: %d", hex_len);
+
+	hex_to_bytes(hex_iv_passwd, 16*2, png_log->iv_passwd);
+	hex_to_bytes(hex_iv_coor, 16*2, png_log->iv_coor);
 
 	fclose(fptr_log);
 
@@ -396,39 +392,26 @@ clean_up:
 
 // @brief searches for passwd_id in log file and decrypts encrypted coordinates with masterkey, extracts the bits and saves it to passwd
 int decrypt_steg(char *passwd_id, unsigned char *masterkey, char *filepath, unsigned char *passwd) {
-	// TODO: WHAT ABOUT THE MULTIPLIER??? GOTTA DO SMTH WITH THAT
 	struct png_log png_log;
 	unsigned int decrypted_len;
 	png_log.passwd_id = calloc(MAX_ID_LEN, sizeof(unsigned char));
-	png_log.iv_coor = calloc(17, sizeof(unsigned char));
-	png_log.iv_passwd = calloc(17, sizeof(unsigned char));
+	png_log.iv_coor = calloc(16, sizeof(unsigned char));
+	png_log.iv_passwd = calloc(16, sizeof(unsigned char));
+	unsigned char masterkey_hash[32] = {0};
 
-	unsigned int encrypted_hexcoor_len = tokenize_log(&png_log, passwd_id);
-	unsigned int encrypted_coor_len = encrypted_hexcoor_len/2;
+	unsigned int encrypted_coor_len = tokenize_log(&png_log, passwd_id);
+	unsigned char *padded_coor = calloc(encrypted_coor_len * 3, sizeof(unsigned char)); // decrypted coor must be at least the len of encrypted coor (to be safe)
 
-	// decrypted coor must be at least the len of encrypted coor (to be safe)
-	unsigned char *padded_coor = calloc(encrypted_coor_len + 1, sizeof(unsigned char));
-	unsigned char *encrypted_coor = calloc(encrypted_coor_len + 1, sizeof(unsigned char)); // hex -> binary, hex is represented with two chars, so byte is half as long
-	unsigned char *hex_encrypted_coor = calloc(encrypted_hexcoor_len + 1, sizeof(unsigned char));
+	pbkdf2(masterkey, masterkey_hash, 32, png_log.iv_coor, 16);
+	decrypted_len = decrypt(png_log.encrypted_coor, encrypted_coor_len, masterkey_hash, png_log.iv_coor, padded_coor); // decrypt original bytes 
+	printf("padded coordinates: %s", padded_coor);
 
-	// convert hex data from log into original bytes
-	hex_to_bytes(hex_encrypted_coor, encrypted_coor);
-	free(hex_encrypted_coor);
-	hex_encrypted_coor = NULL;
-
-	// decrypt original bytes
-	decrypted_len = decrypt(png_log.encrypted_coor, encrypted_hexcoor_len, masterkey, png_log.iv_coor, padded_coor);
-
-	unsigned int pixel_num = (encrypted_coor_len / png_log.max_digits) / 2;
-	free(padded_coor);
-	padded_coor = NULL;
-
+	unsigned int pixel_num = (encrypted_coor_len / png_log.max_digits) / 2; // TODO: check if this is correct 
 	// initialize png_bytep with pixel_num
-	int *row = malloc(pixel_num * sizeof(int));
-	int *column = malloc(pixel_num * sizeof(int));
+	unsigned int *row = malloc(pixel_num * sizeof(int));
+	unsigned int *column = malloc(pixel_num * sizeof(int));
 
-	// un-pad the values and save them as integers in row and column arrays
-	unpad_coor(padded_coor, row, column, png_log.max_digits, pixel_num);
+	unpad_coor(padded_coor, row, column, png_log.max_digits, pixel_num); // un-pad the values and save them as integers in row and column arrays
 	
 	struct png_info png;
 	read_png(filepath, &png.row, &png.width, &png.height);
@@ -440,17 +423,18 @@ int decrypt_steg(char *passwd_id, unsigned char *masterkey, char *filepath, unsi
 	}
 	unsigned char bit;
 	
-	// extract targeted bits from pixels
-	for (int i=0;i<pixel_num/8;i++) {
+	for (int i=0;i<pixel_num/8;i++) { // extract targeted bits from pixels
 		for (int j=0;j<8;j++) {
-			// extract the target bit 
-			bit = png.row[row[i*8 + j]][column[i*8 + j]] & 1;
-			// add extracted bit to passwd[i]
-			passwd_hash[i] |= (bit << j);
+			bit = png.row[row[i*8 + j]][column[i*8 + j]] & 1; // extract the target bit 
+			passwd_hash[i] |= (bit << j); // add extracted bit to passwd[i]
 		}
 	}
 
+	pbkdf2(masterkey, masterkey_hash, 32, png_log.iv_passwd, 16);
 	decrypt(passwd_hash, pixel_num/8, masterkey, png_log.iv_passwd, passwd);
+
+	free(padded_coor);
+	padded_coor = NULL;
 
 	return 0;
 }
@@ -511,17 +495,15 @@ int authenticate(char *masterkey) {
 		exit(EXIT_FAILURE);
 	}
 
-	// extract whole string from masterkey.txt
-	if (fgets(log_buf, hexciphertext_len + hexsalt_len + 2, fptr) == NULL) {
+	if (fgets(log_buf, hexciphertext_len + hexsalt_len + 2, fptr) == NULL) { // extract whole string from masterkey.txt
 		perror("failed to get masterkey hash");
 		exit(EXIT_FAILURE);
 	}
 	fclose(fptr);
 
 	for (attempts=5;attempts != 0;attempts--) {
-		// get user input
 		printf("Enter masterkey: ");
-		if (fgets(masterkey, sizeof(masterkey), stdin) == NULL) {
+		if (fgets(masterkey, sizeof(masterkey), stdin) == NULL) { // get user input
 			printf("\nInvalid input\n");
 			continue;
 		}
@@ -533,7 +515,7 @@ int authenticate(char *masterkey) {
 		tmp++; // skip delimiter
 		strncpy(hexciphertext_file, tmp, hexciphertext_len); // extract masterkey hex
 														  //
-		hex_to_bytes(hex_salt, salt);
+		hex_to_bytes(hex_salt, hexsalt_len, salt);
 
 		// hash masterkey and compare with masterkey hash log
 		pbkdf2(masterkey, ciphertext_user, hexciphertext_len/2, salt, 16);
@@ -633,17 +615,40 @@ int main(int argc, char *argv[]) {
 			return 0;
 		}
 		else if (strncmp(argv[1], "--test", 2) == 0) {
-			unsigned char byte[50] = {0};
-			unsigned char cipher[EVP_MAX_MD_SIZE] = {0};
-			unsigned char salt[] = "12345";
-			unsigned char key[] = "keyyyy";
+			unsigned char byte[50] = "meowie";
+			unsigned char cipher[EVP_MAX_MD_SIZE + 64] = {0};
+			unsigned char cipher_hex[EVP_MAX_MD_SIZE * 2 + 64] = {0};
+			unsigned char salt[16];
+			unsigned char key[32];
+			unsigned char byte_hex[50 * 2];
 
-			RAND_bytes(byte, 50);
-			int cipher_len = encrypt(byte, 50, key, salt, cipher);
+			unsigned char passwd_id[MAX_ID_LEN];
+			unsigned char passwd[MAX_PASSWD_LEN];
+			unsigned char masterkey[MAX_PASSWD_LEN];
+			unsigned char cipher_pad[EVP_MAX_MD_SIZE];
+			unsigned char pad[17] = "0030495729040050";
 
-			for (int i=0;i<cipher_len;i++) {
-				printf("%02x", cipher[i]);
-			}
+			get_usrinput_steg(passwd_id, passwd, masterkey);
+			RAND_bytes(salt, 16);
+
+			printf("original: %s", pad);
+			printf("\n");
+			
+			pbkdf2(masterkey, key, 32, salt, 16);
+			int cipher_len = encrypt(pad, strlen(pad), key, salt, cipher_pad);
+
+			printf("cipher_hex: %s", cipher_hex);
+			printf("\n");
+
+			memset(pad, 0, 17);
+			memset(masterkey, 0, MAX_PASSWD_LEN);
+			memset(key, 0, 32);
+
+			get_usrinput_steg(passwd_id, passwd, masterkey);
+			pbkdf2(masterkey, key, 32, salt, 16);
+
+			decrypt(cipher_pad, cipher_len, key, salt, pad);
+			printf("decrypted: %s", pad);
 
 			return 0;
 		}

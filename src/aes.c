@@ -32,7 +32,6 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key, uns
 		perror("AES: fail");
 		exit(EXIT_FAILURE);
 	}
-        // handleErrors();
 
     /*
      * Provide the message to be encrypted, and obtain the encrypted output.
@@ -54,7 +53,6 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key, uns
 		perror("AES FINAL: fail");
 		exit(EXIT_FAILURE);
 	}
-        // handleErrors();
     ciphertext_len += len;
 
     /* Clean up */
@@ -70,11 +68,16 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key, u
     int len;
 
     int plaintext_len;
+	ERR_load_crypto_strings();
 
     /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new()))
+    if(!(ctx = EVP_CIPHER_CTX_new())) {
+		perror("EVP_CIPHER_CTX_new() fail");
+		exit(EXIT_FAILURE);
         // handleErrors();
+	}
 
+	//EVP_CIPHER_CTX_set_padding(ctx, 0);
     /*
      * Initialise the decryption operation. IMPORTANT - ensure you use a key
      * and IV size appropriate for your cipher
@@ -82,23 +85,33 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key, u
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits
      */
-    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
+		perror("EVP_DecryptInit_ex() fail");
+		exit(EXIT_FAILURE);
         // handleErrors();
+	}
 
     /*
      * Provide the message to be decrypted, and obtain the plaintext output.
      * EVP_DecryptUpdate can be called multiple times if necessary.
      */
-    if(1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+    if(1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len)) {
+		perror("EVP_DecryptUpdate() fail");
+		exit(EXIT_FAILURE);
         // handleErrors();
+	}
     plaintext_len = len;
 
     /*
      * Finalise the decryption. Further plaintext bytes may be written at
      * this stage.
      */
-    if(1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len))
+    if(1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) {
+		ERR_print_errors_fp(stderr);
+		perror("EVP_DecryptFinal_ex() fail");
+		exit(EXIT_FAILURE);
         // handleErrors();
+	}
     plaintext_len += len;
 
     /* Clean up */

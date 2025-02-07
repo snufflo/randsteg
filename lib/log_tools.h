@@ -14,7 +14,7 @@
  * @return 1 if EOF has been detected
  * @raturn 2 if len_arr is smaller than the value to be saved
  */
-int parse_log(FILE *fptr, char *arr, int len_arr, unsigned int num);
+int parse_log(FILE *fptr, unsigned char *arr, int len_arr, unsigned int num);
 
 int parse_integer(FILE *fptr, int len_arr, unsigned int num);
 

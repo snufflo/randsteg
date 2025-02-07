@@ -5,7 +5,7 @@
 
 #define MAX_ID_LEN 50
 
-int parse_log(FILE *fptr, char *arr, int len_arr, unsigned int num) {
+int parse_log(FILE *fptr, unsigned char *arr, int len_arr, unsigned int num) {
 	long original_fptr_pos = ftell(fptr); // Save original position
 	char *tmp_id = calloc(len_arr, sizeof(char));
 	int chr;
@@ -18,23 +18,36 @@ int parse_log(FILE *fptr, char *arr, int len_arr, unsigned int num) {
 		exit(EXIT_FAILURE);
 	}
 
-	for (int i=0;i<=num;i++) {
-		// TODO: position fptr to the [num]th element
-		// get chr until first delimiter
-		len_str = 0;
-		for (;len_str < len_arr;len_str++) {
+	// TODO: might need to fix this
+	// skip irrelevant columns
+	for (int i=0;i<num;i++) {
+		while (chr != 0) {
 			chr = getc(fptr);
-			// if getc gets an EOF
-			if (chr == 0) {
-				// register EOF condition
-				status = 1;
+
+			if (chr == 0) // this loop is for skipping irrelevant parts only -> if 0 or \n, no numth element found
+				return 2;
+			else if ((char) chr == '\n') 
+				return 2;
+			else if ((char) chr == '$')
 				break;
-			}
-			else if ((char) chr == '$' || (char) chr == '\n')
-				break;
-				
-			tmp_id[len_str] = (char) chr;
 		}
+	}
+	chr = 0;
+
+	// get chr until first delimiter or end of string and save value into tmp_id
+	len_str = 0;
+	for (;len_str < len_arr;len_str++) {
+		chr = getc(fptr);
+		// if getc gets an EOF
+		if (chr == 0) {
+			// register EOF condition
+			status = 1;
+			break;
+		}
+		else if ((char) chr == '$' || (char) chr == '\n')
+			break;
+
+		tmp_id[len_str] = (char) chr;
 	}
 
 	fseek(fptr, original_fptr_pos, SEEK_SET); // Restore position
