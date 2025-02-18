@@ -41,7 +41,7 @@ Type your masterkey and press ENTER
 
 #### Distributing bits to png file
 ```console
-randsteg FILEPATH_TO_PNG
+$ randsteg FILEPATH_TO_PNG
 ```
 
 1. You will be asked to type a password id, which will be used to identify the password you are trying to display later
@@ -57,7 +57,7 @@ Type your masterkey and press ENTER
 
 #### Display help
 ```console
-randsteg -h
+$ randsteg -h
 ```
 
 Type your masterkey and press ENTER
