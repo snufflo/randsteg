@@ -37,8 +37,7 @@ int sha256(char *passwd, char *ciphertext, int ciphertext_len) {
 	const EVP_MD *md;
 	// generate salt with passwd -- maybe through a simpler sha hash?
 	char salt[] = "Hello World\n";
-	unsigned char md_value[EVP_MAX_MD_SIZE];
-	int md_len, i;
+	unsigned char md_value[EVP_MAX_MD_SIZE]; int md_len, i;
 
 	OpenSSL_add_all_digests();
 	md = EVP_sha256();
@@ -86,21 +85,3 @@ int pbkdf2(char *passwd, unsigned char *ciphertext, int ciphertext_len, unsigned
 	EVP_cleanup();
 	return 0;
 }
-
-/*
-int main() {
-	clock_t start_time = clock();
-	char ciphertext[EVP_MAX_MD_SIZE];
-	char *salt = "saltsalt";
-	int salt_len = 8;
-
-	//sha512("cookie", ciphertext, EVP_MAX_MD_SIZE);
-	pbkdf2("cookie", ciphertext, EVP_MAX_MD_SIZE, salt, salt_len);
-
-	clock_t end_time = clock();
-	double time_taken = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
-	printf("Time taken for PBKDF2 with 5000 iterations: %f seconds\n", time_taken);
-
-	return 0;
-}
-*/

@@ -5,7 +5,7 @@
 
 #define MAX_ID_LEN 50
 
-int parse_log(FILE *fptr, unsigned char *arr, int len_arr, unsigned int num) {
+int parse_log(FILE *fptr, char *arr, int len_arr, unsigned int num) {
 	long original_fptr_pos = ftell(fptr); // Save original position
 	char *tmp_id = calloc(len_arr, sizeof(char));
 	int chr;
