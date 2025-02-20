@@ -5,6 +5,9 @@
 #include <openssl/evp.h>
 #include <time.h>
 #include "../lib/sha_with_salt.h"
+#include "../lib/log_tools.h"
+
+#define MAX_PASSWD_LEN 100
 
 void print_hex(unsigned char *hash, int len) {
 	for (int i=0;i<len;i++) {
@@ -32,45 +35,6 @@ int generate_rand_num(int min, int max) {
 	return min + (num % (max - min +1));
 }
 
-int sha256(char *passwd, char *ciphertext, int ciphertext_len) {
-	EVP_MD_CTX *mdctx;
-	const EVP_MD *md;
-	// generate salt with passwd -- maybe through a simpler sha hash?
-	char salt[] = "Hello World\n";
-	unsigned char md_value[EVP_MAX_MD_SIZE]; int md_len, i;
-
-	OpenSSL_add_all_digests();
-	md = EVP_sha256();
-	if(!md) {
-		printf("Unknown message digest\n");
-		exit(1);
-	}
-	mdctx = EVP_MD_CTX_create();
-	EVP_DigestInit_ex(mdctx, md, NULL);
-	EVP_DigestUpdate(mdctx, passwd, strlen(passwd));
-	EVP_DigestUpdate(mdctx, salt, strlen(salt));
-	EVP_DigestFinal_ex(mdctx, md_value, &md_len);
-	EVP_MD_CTX_destroy(mdctx);
-	md_value[md_len] = '\0';
-
-	if (md_len > ciphertext_len){
-		perror("OPENSLL: ciphertext array is too small");
-		return 1;
-	}
-
-	printf("%d long Digest in array %d long SHA256 is: ", strlen(md_value), sizeof(md_value));
-	for(i = 0; i < md_len; i++)
-		printf("%02x", md_value[i]);
-	printf("\n");
-
-	strcpy(ciphertext, md_value);
-
-	/* Call this once before exit. */
-	EVP_cleanup();
-
-	return 0;
-}
-
 int pbkdf2(char *passwd, unsigned char *ciphertext, int ciphertext_len, unsigned char *salt, int salt_len) {
 	int passwd_len = strlen(passwd);
 
@@ -84,4 +48,102 @@ int pbkdf2(char *passwd, unsigned char *ciphertext, int ciphertext_len, unsigned
 
 	EVP_cleanup();
 	return 0;
+}
+
+int masterkey_init() {
+	char masterkey[MAX_PASSWD_LEN] = {0};
+	int salt_len = 16;
+	unsigned char salt[16] = {0};
+
+	printf("Enter new masterkey: ");
+	if (fgets(masterkey, sizeof(masterkey), stdin) == NULL) {
+		perror("\nInvalid Input\n");
+		return 1;
+	}
+	masterkey[strcspn(masterkey, "\n")] = '\0'; // Replace '\n' with '\0'
+	printf("\n");
+
+	if (RAND_bytes(salt, 16) != 1) {
+		printf("OPENSSL: Error generating random bytes");
+		exit(EXIT_FAILURE);
+	}
+
+	unsigned char ciphertext[EVP_MAX_MD_SIZE] = {0};
+	pbkdf2(masterkey, ciphertext, EVP_MAX_MD_SIZE, salt, salt_len);
+
+	FILE *fptr = fopen("masterkey.txt", "w");
+	if (fptr == NULL) {
+		perror("Error opening file");
+		return 1;
+	}
+
+	fprint_to_hex(fptr, salt, 16);
+	write_delimiter(fptr);
+	fprint_to_hex(fptr, ciphertext, EVP_MAX_MD_SIZE);
+
+	fclose(fptr);
+
+	return 0;
+}
+
+int authenticate(char *masterkey) {
+	int attempts = 5;
+	int hexsalt_len = 16 * 2;
+	int hexciphertext_len = EVP_MAX_MD_SIZE * 2;
+	char hexciphertext_user[EVP_MAX_MD_SIZE * 2 + 1] = {0}; // * 2 for hex format
+	unsigned char ciphertext_user[EVP_MAX_MD_SIZE + 1] = {0}; // * 2 for hex format
+	char hexciphertext_file[EVP_MAX_MD_SIZE * 2 + 1] = {0};
+	char hex_salt[16 * 2] = {0};
+	unsigned char salt[16] = {0};
+	char log_buf[(EVP_MAX_MD_SIZE + 16) * 2 + 1] = {0}; // + salt len + null
+	char *tmp;
+
+	FILE *fptr = fopen("masterkey.txt", "r");
+	if (fptr == NULL) {
+		perror("Failed to open masterkey.txt\nHave you tried initializing with -i?\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (fgets(log_buf, hexciphertext_len + hexsalt_len + 2, fptr) == NULL) { // extract whole string from masterkey.txt
+		perror("failed to get masterkey hash");
+		exit(EXIT_FAILURE);
+	}
+	fclose(fptr);
+
+	for (attempts=5;attempts != 0;attempts--) {
+		printf("Enter masterkey: ");
+		if (fgets(masterkey, MAX_PASSWD_LEN, stdin) == NULL) { // get user input
+			printf("\nInvalid input\n");
+			continue;
+		}
+		masterkey[strcspn(masterkey, "\n")] = '\0'; // Replace '\n' with '\0'
+		printf("\n");
+
+		tmp = strstr((char*)log_buf, "$"); // jump to next delimiter
+		memcpy(hex_salt, log_buf, tmp - log_buf); // extract salt hex
+		tmp++; // skip delimiter
+		strncpy(hexciphertext_file, tmp, hexciphertext_len); // extract masterkey hex
+
+		hex_to_bytes((char*)hex_salt, hexsalt_len, salt);
+
+		// hash masterkey and compare with masterkey hash log
+		pbkdf2(masterkey, ciphertext_user, hexciphertext_len/2, salt, 16);
+		bytes_to_hex(ciphertext_user, EVP_MAX_MD_SIZE, hexciphertext_user); // TODO: EVP_MAX_MD_SIZE is somehow 64 - why?
+
+		if (!memcmp(hexciphertext_file, hexciphertext_user, hexciphertext_len)) {
+			printf("masterkey confirmed\n==================================================\n\n");
+			return 0;
+		}
+
+		printf("Remaining attempts: %d\n", attempts);
+		memset(hexciphertext_user, 0, EVP_MAX_MD_SIZE * 2 + 1); // * 2 for hex format
+		memset(ciphertext_user, 0, EVP_MAX_MD_SIZE + 1); // * 2 for hex format
+		memset(hexciphertext_file, 0, EVP_MAX_MD_SIZE * 2 + 1);
+		memset(salt, 0, 16);
+	}
+
+	perror("Exceeded failed attempts.\n");
+	exit(EXIT_FAILURE);
+
+	return 1;
 }

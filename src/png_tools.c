@@ -70,8 +70,8 @@ void read_png (const char *filename, png_bytep **row_pointers, int *width, int *
 	png_destroy_read_struct(&png, &info, NULL);
 }
 
-void write_png(const char *filename, png_bytep *row, int width, int height) {
-	FILE *fp = fopen("stegged.png", "w");
+void write_png(const char *filepath, png_bytep *row, int width, int height) {
+	FILE *fp = fopen(filepath, "w");
 	if (!fp) {
 		perror("Failed to open png");
 		exit(EXIT_FAILURE);

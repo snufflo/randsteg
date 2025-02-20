@@ -13,7 +13,7 @@
 #include "../lib/log_tools.h"
 
 #define MAX_ID_LEN 50
-#define MAX_PASSWD_LEN 100
+#define MAX_PASSWD_LEN 50
 
 struct png_log {
 	char *passwd_id;
@@ -29,39 +29,6 @@ struct png_info {
 	int height;
 	png_bytep *row;
 };
-
-void fprint_to_hex(FILE *fptr, unsigned char *buf, int buf_len) {
-	for (int i=0;i<buf_len;i++) {
-		fprintf(fptr, "%02x", buf[i]);
-	}
-}
-
-void bytes_to_hex(unsigned char *buf, int buf_len, unsigned char *hex) {
-	for (int i=0;i<buf_len;i++) {
-		if (buf[i] == 0) {
-			break;
-		}
-		sprintf(hex + (i * 2), "%02x", buf[i]);
-	}
-}
-
-int hex_to_bytes(const char *hex, int hex_len, unsigned char *output) {
-	int chrs = 0;
-
-	if (hex_len % 2 != 0) {
-		fprintf(stderr, "Invalid hex string: must have an even length.\n");
-		exit(EXIT_FAILURE);
-	
-	}
-	int output_len = hex_len / 2;
-	
-	for (size_t i = 0; i < output_len; i++) {
-		chrs++;
-		sscanf(hex + (i * 2), "%2hhx", &output[i]);
-	}
-
-	return chrs;
-}
 
 /* ----------------------------------------
  * IN ORDER THE INJECTED PASSWORD-HASH TO BE UNDETECTABLE AS POSSIBLE, 
@@ -199,15 +166,7 @@ void distribute_bits(const char *filepath, struct png_info *png, char *hash, int
 		}
 	}
 
-	FILE *png_fptr = fopen(filepath, "w");
-	if (png_fptr == NULL) {
-		perror("Error opening png file for writing");
-		exit(EXIT_FAILURE);
-	}
-
-	// TODO: custom name of file in argv
-	write_png("stegged.png", png->row, png->width, png->height); // write manipulated pixels into png
-	fclose(png_fptr);
+	write_png(filepath, png->row, png->width, png->height); // write manipulated pixels into png
 
 }
 // struct of **coordinates: [row] [column] [RGB or A] [depth of bit]
@@ -251,13 +210,10 @@ void steg_in_png(const char *filepath, char *passwd_id, unsigned char *passwd, u
 
 	// Format: passwd_id $ multiplier_16 $ max_digits $ encrypted_coordinates $ iv_passwd $ iv_coor
 	// 16, because aes works in 16 byte block operations
-	FILE *log_fptr = fopen("log.txt", "r+");
+	FILE *log_fptr = fopen("log.txt", "a");
 	if (log_fptr == NULL) {
-		log_fptr = fopen("log.txt", "w");
-		if (log_fptr == NULL) {
-			perror("Error opening log file");
-			exit(EXIT_FAILURE);
-		}
+		perror("Error opening log file");
+		exit(EXIT_FAILURE);
 	}
 	
 	//-------------preparations for logfile---------------
@@ -346,12 +302,13 @@ unsigned int tokenize_log(struct png_log *png_log, char *passwd_id) {
 			goto clean_up;
 		}
 
-		if (strcmp(png_log->passwd_id, passwd_id) == 0) { // success
-			int_chr = getc(fptr_log); // skip delimiter
+		if (strcmp(png_log->passwd_id, passwd_id) == 0) // passwd detection success
 			break;
-		}
 
-		while (chr != '\n' || int_chr != EOF) { // go to new line
+		memset(png_log->passwd_id, 0, MAX_ID_LEN);
+		chr = 0;
+		int_chr = 0;
+		while (chr != '\n' && int_chr != EOF) { // go to new line
 			int_chr = getc(fptr_log);
 			if (int_chr == EOF) { // if EOF is detected
 				perror("Invalid password id");
@@ -460,113 +417,16 @@ int decrypt_steg(char *passwd_id, unsigned char *masterkey, char *filepath, unsi
 	return 0;
 }
 
-// encrypt masterkey with pbkdf2
-int masterkey_init() {
-	char masterkey[MAX_PASSWD_LEN] = {0};
-	int salt_len = 16;
-	unsigned char salt[16] = {0};
-
-	printf("Enter new masterkey: ");
-	if (fgets(masterkey, sizeof(masterkey), stdin) == NULL) {
-		perror("\nInvalid Input\n");
-		return 1;
-	}
-	masterkey[strcspn(masterkey, "\n")] = '\0'; // Replace '\n' with '\0'
-	printf("\n");
-
-	if (RAND_bytes(salt, 16) != 1) {
-		printf("OPENSSL: Error generating random bytes");
-		exit(EXIT_FAILURE);
-	}
-
-	unsigned char ciphertext[EVP_MAX_MD_SIZE] = {0};
-	pbkdf2(masterkey, ciphertext, EVP_MAX_MD_SIZE, salt, salt_len);
-
-	FILE *fptr = fopen("masterkey.txt", "w");
-	if (fptr == NULL) {
-		perror("Error opening file");
-		return 1;
-	}
-
-	fprint_to_hex(fptr, salt, 16);
-	write_delimiter(fptr);
-	fprint_to_hex(fptr, ciphertext, EVP_MAX_MD_SIZE);
-
-	fclose(fptr);
-
-	return 0;
-}
-
-// @brief confirms masterkey and saves it in [masterkey]
-int authenticate(char *masterkey) {
-	int attempts = 5;
-	int hexsalt_len = 16 * 2;
-	int hexciphertext_len = EVP_MAX_MD_SIZE * 2;
-	unsigned char hexciphertext_user[EVP_MAX_MD_SIZE * 2 + 1] = {0}; // * 2 for hex format
-	unsigned char ciphertext_user[EVP_MAX_MD_SIZE + 1] = {0}; // * 2 for hex format
-	unsigned char hexciphertext_file[EVP_MAX_MD_SIZE * 2 + 1] = {0};
-	unsigned char hex_salt[16 * 2] = {0};
-	unsigned char salt[16] = {0};
-	unsigned char log_buf[(EVP_MAX_MD_SIZE + 16) * 2 + 1] = {0}; // + salt len + null
-	unsigned char *tmp;
-
-	FILE *fptr = fopen("masterkey.txt", "r");
-	if (fptr == NULL) {
-		perror("Failed to open masterkey.txt\nHave you tried initializing with -i?\n");
-		exit(EXIT_FAILURE);
-	}
-
-	if (fgets(log_buf, hexciphertext_len + hexsalt_len + 2, fptr) == NULL) { // extract whole string from masterkey.txt
-		perror("failed to get masterkey hash");
-		exit(EXIT_FAILURE);
-	}
-	fclose(fptr);
-
-	for (attempts=5;attempts != 0;attempts--) {
-		printf("Enter masterkey: ");
-		if (fgets(masterkey, sizeof(masterkey), stdin) == NULL) { // get user input
-			printf("\nInvalid input\n");
-			continue;
-		}
-		masterkey[strcspn(masterkey, "\n")] = '\0'; // Replace '\n' with '\0'
-		printf("\n");
-
-		tmp = strstr(log_buf, "$");
-		memcpy(hex_salt, log_buf, tmp - log_buf); // extract salt hex
-		tmp++; // skip delimiter
-		strncpy(hexciphertext_file, tmp, hexciphertext_len); // extract masterkey hex
-														  //
-		hex_to_bytes(hex_salt, hexsalt_len, salt);
-
-		// hash masterkey and compare with masterkey hash log
-		pbkdf2(masterkey, ciphertext_user, hexciphertext_len/2, salt, 16);
-		bytes_to_hex(ciphertext_user, EVP_MAX_MD_SIZE, hexciphertext_user); // TODO: EVP_MAX_MD_SIZE is somehow 64 - why?
-
-		if (!memcmp(hexciphertext_file, hexciphertext_user, hexciphertext_len)) {
-			printf("masterkey confirmed\n");
-			return 0;
-		}
-
-		printf("Remaining attempts: %d\n", attempts);
-		memset(hexciphertext_user, 0, EVP_MAX_MD_SIZE * 2 + 1); // * 2 for hex format
-		memset(ciphertext_user, 0, EVP_MAX_MD_SIZE + 1); // * 2 for hex format
-		memset(hexciphertext_file, 0, EVP_MAX_MD_SIZE * 2 + 1);
-		memset(salt, 0, 16);
-	}
-
-	perror("Exceeded failed attempts.\n");
-	exit(EXIT_FAILURE);
-
-	return 1;
-}
-
 void get_usrinput_steg(char *passwd_id, char *passwd, char *masterkey) {
-	printf("Enter id of password: ");
-	if (!fgets(passwd_id, 100, stdin)) {
+	printf("Enter id of password (50 characters max): ");
+	if (!fgets(passwd_id, MAX_ID_LEN, stdin)) {
 		perror("FGETS: error");
 		exit(EXIT_FAILURE);
 	}
 	passwd_id[strcspn(passwd_id, "\n")] = '\0'; // Replace '\n' with '\0'
+	if (strlen(passwd_id) >= MAX_ID_LEN) {
+		perror("WARNING: passwd id might have exceeded max characters!\nThis could lead to unexpected behaviour!");
+	}
 	printf("\n");
 
 	printf("Enter password you want to hide: ");
@@ -575,6 +435,9 @@ void get_usrinput_steg(char *passwd_id, char *passwd, char *masterkey) {
 		exit(EXIT_FAILURE);
 	}
 	passwd[strcspn(passwd, "\n")] = '\0';
+	if (strlen(passwd) >= MAX_PASSWD_LEN) {
+		perror("WARNING: passwd might have exceeded max characters!\nThis could lead to unexpected behaviour!");
+	}
 	printf("\n");
 
 	printf("Enter your masterkey: ");
@@ -583,6 +446,9 @@ void get_usrinput_steg(char *passwd_id, char *passwd, char *masterkey) {
 		exit(EXIT_FAILURE);
 	}
 	masterkey[strcspn(masterkey, "\n")] = '\0';
+	if (strlen(masterkey) >= MAX_PASSWD_LEN) {
+		perror("WARNING: passwd might have exceeded max characters!\nThis could lead to unexpected behaviour!");
+	}
 	printf("\n");
 }
 
@@ -606,14 +472,20 @@ int main(int argc, char *argv[]) {
 	write_png(output_file, rowp, width, height);
 	*/
 
+	char masterkey[MAX_PASSWD_LEN] = {0};
+	FILE *masterkey_fptr = fopen("masterkey.txt", "r");
+
+	if (!masterkey_fptr && strncmp(argv[1], "-i", 2)) {
+		perror("masterkey.txt not found.\nTry randsteg -i to initialize masterkey first!\n");
+		exit(EXIT_FAILURE);
+	}
 	if (argc == 4) {
 		if (strncmp(argv[1], "-d", 2) == 0) { // extract bits and decrypt password
-			printf("option: decrypt detected\n");
 			char passwd[MAX_PASSWD_LEN] = {0};
-			char masterkey[MAX_PASSWD_LEN] = {0};
 
 			authenticate(masterkey);
 
+			printf("decrypting image...\n");
 			decrypt_steg(argv[2], masterkey, argv[3], passwd);
 
 			printf("Password: %s", passwd);
@@ -623,84 +495,45 @@ int main(int argc, char *argv[]) {
 			exit(EXIT_FAILURE);
 		}
 	}
+	else if (argc == 3) {
+		if (strncmp(argv[1], "-r", 2) == 0) { // remove a passwd from entry
+			authenticate(masterkey);
+			delete_line(argv[2]);
+			return 0;
+		}
+	}
 	else if (argc == 2) {
 		if (strncmp(argv[1], "-i", 2) == 0) { // initialize masterkey
-			printf("option: init detected\n");
+			if (masterkey_fptr) {
+				authenticate(masterkey);
+			}
 			masterkey_init();
 			return 0;
 		}
 		else if (strncmp(argv[1], "-h", 2) == 0) { // display help
 			printf("Thank you for using randsteg! \n\n Options and Format: \n");
-			printf("'randsteg -d PASSWD_ID FILEPATH_TO_PNG'\n\t- Exstracts and decrypts the password for [PASSWD_ID] that is in [FILEPATH_TO_PNG]\n\n");
+			printf("If using the first time, make sure you initialize a masterkey with 'randsteg -i'!");
+			printf("'randsteg -d PASSWD_ID FILEPATH_TO_PNG'\n\t- Extracts and decrypts the password for [PASSWD_ID] that is in [FILEPATH_TO_PNG]\n\n");
 			printf("'randsteg FILEPATH_TO_PNG'\n\t- Encrypts and hides password into FILEPATH_TO_PNG\n\n");
+			printf("'randsteg -r PASSWD_ID'\n\t- Removes password entry from log.txt (make sure you delete the injected image afterwards!)\n\n");
+			printf("'randsteg -l'\n\t- Lists all password IDs\n\n");
+
 			return 0;
 		}
-		else if (strncmp(argv[1], "--test", 2) == 0) {
-			unsigned char cipher_hex[EVP_MAX_MD_SIZE * 2 + 64] = {0};
-			unsigned char salt[16];
-			unsigned char key[32];
-			unsigned char byte_hex[50 * 2];
+		else if (strncmp(argv[1], "-l", 2) == 0) { // list all password IDs
+			authenticate(masterkey);
 
-			unsigned char passwd_id[MAX_ID_LEN];
-			unsigned char passwd[MAX_PASSWD_LEN];
-			unsigned char masterkey[MAX_PASSWD_LEN];
-			unsigned char cipher_pad[EVP_MAX_MD_SIZE];
-			unsigned char pad[20] = {0};
-
-			unsigned int *row = calloc(3, sizeof(unsigned char));
-			unsigned int *column = calloc(3, sizeof(unsigned char));
-
-			for (int i=0; i<3; i++) {
-				row[i] = i*5;
-				column[i] = i*5;
-			}
-			//pad_coor(pad, row, column, 3, 3);
-
-			get_usrinput_steg(passwd_id, passwd, masterkey);
-			RAND_bytes(salt, 16);
-
-			printf("original: %s", pad);
-			printf("\n");
-			
-			pbkdf2(masterkey, key, 32, salt, 16);
-			int cipher_len = encrypt(pad, strlen(pad), key, salt, cipher_pad);
-
-			printf("cipher_hex: %s", cipher_hex);
-			printf("\n");
-			FILE *fptr = fopen("test.txt", "w");
-			fprint_to_hex(fptr, cipher_pad, cipher_len); // this might be the problem: you have to use cipher_len
-			fprintf(fptr, "\n");
-			fclose(fptr);
-
-			memset(pad, 0, 17);
-			memset(cipher_hex, 0, EVP_MAX_MD_SIZE * 2 + 64);
-			memset(cipher_pad, 0, EVP_MAX_MD_SIZE);
-			memset(masterkey, 0, MAX_PASSWD_LEN);
-			memset(key, 0, 32);
-			FILE *fptr_r = fopen("test.txt", "r");
-			char chr;
-
-			for(int i=0;i<EVP_MAX_MD_SIZE + 64;i++) {
-				chr = (char)fgetc(fptr_r);
-				if (chr == '\n')
-					break;
-				memcpy(cipher_hex+i, &chr, 1);
-			}
-			hex_to_bytes(cipher_hex, EVP_MAX_MD_SIZE*2, cipher_pad); // this might be the problem: incorrect length of hex
-
-			get_usrinput_steg(passwd_id, passwd, masterkey);
-			pbkdf2(masterkey, key, 32, salt, 16);
-
-			decrypt(cipher_pad, cipher_len, key, salt, pad);
-			printf("decrypted: %s", pad);
-
-			return 0;
+			FILE *fptr = fopen("log.txt", "r");
+			list_passwd_id(fptr);
+		}
+		else if (strncmp(argv[1], "--test", 6) == 0) { // test function
+			printf("nothing to test :D");
 		}
 		else { // inject password bits into png
-			printf("option: injection detected\n");
 			char passwd[MAX_PASSWD_LEN + 1] = {0};
 			char passwd_id[100] = {0};
-			char masterkey[MAX_PASSWD_LEN + 1] = {0};
+
+			authenticate(masterkey);
 
 			get_usrinput_steg(passwd_id, passwd, masterkey);
 

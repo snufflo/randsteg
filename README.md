@@ -55,6 +55,19 @@ $ randsteg -d PASSWORD_ID FILEPATH_TO_PNG
 
 Type your masterkey and press ENTER
 
+#### Remove password
+```console
+$ randsteg -r PASSWORD_ID
+```
+
+- This will only remove the log entry of your password, but NOT the image, where the bits were injected!
+    - So make sure you delete the png file too!
+
+#### List all password IDs
+```console
+$ randsteg -l
+```
+
 #### Display help
 ```console
 $ randsteg -h
