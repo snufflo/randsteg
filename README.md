@@ -4,7 +4,7 @@ RandSteg
 Randsteg is a program that hides your encrypted password into a png file.
 Its name is short for RANDomized STEGanography.
 
-![demo][demo.gif]
+![demo](demo.gif)
 
 General idea: you can hide your data into a png file by using bit operations on to *random* pixels of an image. 
 
